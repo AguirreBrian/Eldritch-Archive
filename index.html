@@ -4,6 +4,23 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Eldritch Archive - Compendio Enciclopédico</title>
+    
+    <!-- PWA Meta Tags -->
+    <meta name="description" content="Compendio Enciclopédico de Criaturas Mitológicas">
+    <meta name="theme-color" content="#2dd4bf">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Eldritch Archive">
+    
+    <!-- Manifest -->
+    <link rel="manifest" href="./manifest.json">
+    
+    <!-- Icons -->
+    <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png">
+    <link rel="icon" type="image/png" sizes="512x512" href="./icon-512.png">
+    <link rel="apple-touch-icon" href="./icon-512.png">
+    
+    <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Crimson+Text:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
@@ -38,6 +55,14 @@
             overflow-x: hidden;
             position: relative;
             min-height: 100vh;
+        }
+
+        .logo {
+            width: 120px;
+            height: 120px;
+            margin: 0 auto 20px;
+            display: block;
+            filter: drop-shadow(0 0 20px rgba(45, 212, 191, 0.3));
         }
 
         #particle-canvas {
@@ -471,8 +496,10 @@
 
         .modal.active {
             display: flex;
-            align-items: center;
+            align-items: flex-start;
             justify-content: center;
+            padding-top: 40px;
+            padding-bottom: 40px;
         }
 
         .modal-content {
@@ -484,6 +511,9 @@
             padding: 40px;
             position: relative;
             animation: slideIn 0.4s ease;
+            margin: auto 0;
+            max-height: calc(100vh - 80px);
+            overflow-y: auto;
         }
 
         @keyframes slideIn {
@@ -507,10 +537,11 @@
 
         .modal-image {
             width: 100%;
-            max-height: 400px;
-            object-fit: cover;
+            height: auto;
+            object-fit: contain;
             border-radius: 5px;
             margin-bottom: 20px;
+            background: var(--bg-secondary);
         }
 
         .modal-title {
@@ -587,6 +618,10 @@
             text-align: center;
             padding: 60px 20px;
             color: var(--text-muted);
+            grid-column: 1 / -1;
+            width: 100%;
+            max-width: 600px;
+            margin: 0 auto;
         }
 
         .empty-state-icon {
@@ -628,6 +663,7 @@
     
     <div class="app-container">
         <header>
+            <img src="./logo.png" alt="Eldritch Archive Logo" class="logo">
             <h1>✦ Eldritch Archive ✦</h1>
             <p class="subtitle">Compendio Enciclopédico de Criaturas Mitológicas</p>
             <div class="sync-status">
@@ -783,8 +819,6 @@
         const CONFIG = {
             dbName: 'EldritchArchiveDB',
             storeName: 'creatures',
-            defaultGistId: '23455b6712621069868235bcb3eb838b',
-            defaultToken: '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',
             defaultFilename: 'eldritch_archive_data.json'
         };
 
@@ -885,8 +919,8 @@
         // ========================================
         function getGistConfig() {
             return {
-                token: localStorage.getItem('gist_token') || CONFIG.defaultToken,
-                gistId: localStorage.getItem('gist_id') || CONFIG.defaultGistId,
+                token: localStorage.getItem('gist_token') || '',
+                gistId: localStorage.getItem('gist_id') || '',
                 filename: localStorage.getItem('gist_filename') || CONFIG.defaultFilename
             };
         }
@@ -911,9 +945,34 @@
             statusText.textContent = message;
         }
 
+        async function mergeCreatures(localCreatures, remoteCreatures) {
+            // Create a map of creatures by ID for efficient lookup
+            const creaturesMap = new Map();
+            
+            // Add all local creatures to the map
+            localCreatures.forEach(creature => {
+                creaturesMap.set(creature.id, creature);
+            });
+            
+            // Merge remote creatures (remote wins in case of duplicates)
+            remoteCreatures.forEach(creature => {
+                creaturesMap.set(creature.id, creature);
+            });
+            
+            // Convert map back to array
+            return Array.from(creaturesMap.values());
+        }
+
         async function pullFromGist() {
             const config = getGistConfig();
-            updateSyncStatus('syncing', 'Descargando desde GitHub Gist...');
+            
+            // Check if configuration is complete
+            if (!config.token || !config.gistId) {
+                updateSyncStatus('error', 'Configuración incompleta: ingresa Token y Gist ID', true);
+                return 0;
+            }
+            
+            updateSyncStatus('syncing', 'Descargando y fusionando desde GitHub Gist...');
 
             try {
                 const response = await fetch(`https://api.github.com/gists/${config.gistId}`, {
@@ -934,25 +993,29 @@
                     throw new Error(`Archivo ${config.filename} no encontrado en el Gist`);
                 }
 
-                const creatures = JSON.parse(fileContent);
+                const remoteCreatures = JSON.parse(fileContent);
+                const localCreatures = await getAllCreatures();
                 
-                // Merge strategy: Replace all local data with Gist data
+                // MERGE: Combine local and remote data
+                const mergedCreatures = await mergeCreatures(localCreatures, remoteCreatures);
+                
+                // Clear and save merged data
                 await clearAllCreatures();
-                for (const creature of creatures) {
+                for (const creature of mergedCreatures) {
                     await addCreature(creature);
                 }
 
                 const now = new Date().toLocaleString('es-ES');
                 localStorage.setItem('last_sync', now);
                 updateLastSyncDisplay(now);
-                updateSyncStatus('success', `Sincronizado: ${creatures.length} criaturas descargadas`);
+                updateSyncStatus('success', `✅ Sincronizado: ${mergedCreatures.length} criaturas (${localCreatures.length} local + ${remoteCreatures.length} remoto)`);
                 
                 // Refresh display if in explorer view
                 if (document.getElementById('explorer').classList.contains('active')) {
                     await displayCreatures();
                 }
 
-                return creatures.length;
+                return mergedCreatures.length;
             } catch (error) {
                 console.error('Pull error:', error);
                 updateSyncStatus('error', `Error al descargar: ${error.message}`, true);
@@ -962,11 +1025,49 @@
 
         async function pushToGist() {
             const config = getGistConfig();
-            updateSyncStatus('syncing', 'Subiendo a GitHub Gist...');
+            
+            // Check if configuration is complete
+            if (!config.token || !config.gistId) {
+                updateSyncStatus('error', 'Configuración incompleta: ingresa Token y Gist ID', true);
+                return 0;
+            }
+            
+            updateSyncStatus('syncing', 'Sincronizando con GitHub Gist...');
 
             try {
-                const creatures = await getAllCreatures();
-                const content = JSON.stringify(creatures, null, 2);
+                // STEP 1: Pull and merge first to get latest remote data
+                let remoteCreatures = [];
+                try {
+                    const response = await fetch(`https://api.github.com/gists/${config.gistId}`, {
+                        headers: {
+                            'Authorization': `token ${config.token}`,
+                            'Accept': 'application/vnd.github.v3+json'
+                        }
+                    });
+
+                    if (response.ok) {
+                        const gist = await response.json();
+                        const fileContent = gist.files[config.filename]?.content;
+                        if (fileContent) {
+                            remoteCreatures = JSON.parse(fileContent);
+                        }
+                    }
+                } catch (pullError) {
+                    console.warn('Could not pull before push, pushing local only:', pullError);
+                }
+
+                // STEP 2: Merge local with remote (local wins for duplicates)
+                const localCreatures = await getAllCreatures();
+                const mergedCreatures = await mergeCreatures(remoteCreatures, localCreatures);
+                
+                // STEP 3: Save merged data locally
+                await clearAllCreatures();
+                for (const creature of mergedCreatures) {
+                    await addCreature(creature);
+                }
+                
+                // STEP 4: Push merged data to Gist
+                const content = JSON.stringify(mergedCreatures, null, 2);
 
                 const response = await fetch(`https://api.github.com/gists/${config.gistId}`, {
                     method: 'PATCH',
@@ -991,9 +1092,9 @@
                 const now = new Date().toLocaleString('es-ES');
                 localStorage.setItem('last_sync', now);
                 updateLastSyncDisplay(now);
-                updateSyncStatus('success', `${creatures.length} criaturas subidas exitosamente`);
+                updateSyncStatus('success', `✅ ${mergedCreatures.length} criaturas sincronizadas y subidas`);
 
-                return creatures.length;
+                return mergedCreatures.length;
             } catch (error) {
                 console.error('Push error:', error);
                 updateSyncStatus('error', `Error al subir: ${error.message}`, true);
@@ -1527,6 +1628,21 @@
             document.addEventListener('DOMContentLoaded', initApp);
         } else {
             initApp();
+        }
+
+        // ========================================
+        // SERVICE WORKER REGISTRATION (PWA)
+        // ========================================
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./sw.js')
+                    .then((registration) => {
+                        console.log('✅ Service Worker registered:', registration.scope);
+                    })
+                    .catch((error) => {
+                        console.log('❌ Service Worker registration failed:', error);
+                    });
+            });
         }
     </script>
 </body>
