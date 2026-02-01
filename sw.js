@@ -2,18 +2,25 @@ const CACHE_NAME = 'eldritch-archive-v1';
 const urlsToCache = [
   './index.html',
   './logo.png',
-  './icon-192.png',
-  './icon-512.png',
   './manifest.json'
 ];
 
-// Install event - cache resources
+// Install event - cache resources with error handling
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME)
       .then((cache) => {
         console.log('Cache opened');
-        return cache.addAll(urlsToCache);
+        // Cache files individually to handle missing files gracefully
+        return Promise.all(
+          urlsToCache.map(url => {
+            return cache.add(url).catch(err => {
+              console.warn(`Failed to cache ${url}:`, err);
+              // Continue even if one file fails
+              return Promise.resolve();
+            });
+          })
+        );
       })
   );
   self.skipWaiting();
