@@ -16,9 +16,9 @@
     <link rel="manifest" href="./manifest.json">
     
     <!-- Icons -->
-    <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png">
-    <link rel="icon" type="image/png" sizes="512x512" href="./icon-512.png">
-    <link rel="apple-touch-icon" href="./icon-512.png">
+    <link rel="icon" type="image/png" sizes="192x192" href="./logo.png">
+    <link rel="icon" type="image/png" sizes="512x512" href="./logo.png">
+    <link rel="apple-touch-icon" href="./logo.png">
     
     <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -365,6 +365,15 @@
             border: 1px solid var(--border-color);
             border-radius: 5px;
             min-height: 50px;
+            align-items: center;
+        }
+
+        .input-wrapper {
+            display: flex;
+            gap: 8px;
+            flex: 1;
+            min-width: 200px;
+            align-items: center;
         }
 
         .tag-item, .ability-item {
@@ -398,6 +407,33 @@
             outline: none;
             font-family: 'Crimson Text', serif;
             font-size: 1rem;
+        }
+
+        .add-item-btn {
+            background: var(--accent-primary);
+            color: var(--bg-primary);
+            border: none;
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            cursor: pointer;
+            font-size: 1.2rem;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s ease;
+            flex-shrink: 0;
+        }
+
+        .add-item-btn:hover {
+            background: #1db9a4;
+            transform: scale(1.1);
+            box-shadow: 0 3px 10px rgba(45, 212, 191, 0.4);
+        }
+
+        .add-item-btn:active {
+            transform: scale(0.95);
         }
 
         .btn {
@@ -681,7 +717,7 @@
         <!-- Explorer View -->
         <div id="explorer" class="view active">
             <div class="search-filter-bar">
-                <input type="text" class="search-input" id="search-input" placeholder="🔍 Buscar criatura por nombre...">
+                <input type="text" class="search-input" id="search-input" placeholder="🔍 Buscar criatura por nombre..." autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" name="search-creatures" data-form-type="other">
                 <select class="filter-select" id="filter-mythology">
                     <option value="">Todas las mitologías</option>
                 </select>
@@ -742,7 +778,10 @@
                 <div class="form-group">
                     <label class="form-label">Habilidades</label>
                     <div class="tags-input-container" id="abilities-container">
-                        <input type="text" class="add-item-input" id="input-habilidad" placeholder="Presiona Enter para añadir...">
+                        <div class="input-wrapper">
+                            <input type="text" class="add-item-input" id="input-habilidad" placeholder="Escribe y presiona + o Enter...">
+                            <button type="button" class="add-item-btn" id="add-ability-btn" title="Agregar habilidad">+</button>
+                        </div>
                     </div>
                 </div>
 
@@ -760,7 +799,10 @@
                 <div class="form-group">
                     <label class="form-label">Etiquetas</label>
                     <div class="tags-input-container" id="tags-container">
-                        <input type="text" class="add-item-input" id="input-tag" placeholder="Presiona Enter para añadir...">
+                        <div class="input-wrapper">
+                            <input type="text" class="add-item-input" id="input-tag" placeholder="Escribe y presiona + o Enter...">
+                            <button type="button" class="add-item-btn" id="add-tag-btn" title="Agregar etiqueta">+</button>
+                        </div>
                     </div>
                 </div>
 
@@ -778,17 +820,12 @@
                 
                 <div class="form-group">
                     <label class="form-label">GitHub Token</label>
-                    <input type="password" class="form-input" id="config-token" placeholder="ghp_...">
+                    <input type="password" class="form-input" id="config-token" placeholder="ghp_..." autocomplete="new-password" data-form-type="other">
                 </div>
 
                 <div class="form-group">
                     <label class="form-label">Gist ID</label>
-                    <input type="text" class="form-input" id="config-gist-id" placeholder="Gist ID del archivo de datos">
-                </div>
-
-                <div class="form-group">
-                    <label class="form-label">Nombre del Archivo</label>
-                    <input type="text" class="form-input" id="config-filename" value="eldritch_archive_data.json">
+                    <input type="text" class="form-input" id="config-gist-id" placeholder="Gist ID del archivo de datos" autocomplete="off" data-form-type="other">
                 </div>
 
                 <div class="sync-actions">
@@ -1270,31 +1307,55 @@
             const tagsContainer = document.getElementById('tags-container');
             const abilityInput = document.getElementById('input-habilidad');
             const tagInput = document.getElementById('input-tag');
+            const addAbilityBtn = document.getElementById('add-ability-btn');
+            const addTagBtn = document.getElementById('add-tag-btn');
 
-            // Handle abilities input
+            // Function to add ability
+            function addAbility() {
+                const value = abilityInput.value.trim();
+                if (value && !currentAbilities.includes(value)) {
+                    currentAbilities.push(value);
+                    renderAbilities();
+                    abilityInput.value = '';
+                }
+            }
+
+            // Function to add tag
+            function addTag() {
+                const value = tagInput.value.trim();
+                if (value && !currentTags.includes(value)) {
+                    currentTags.push(value);
+                    renderTags();
+                    tagInput.value = '';
+                }
+            }
+
+            // Handle abilities input - Enter key
             abilityInput.addEventListener('keydown', (e) => {
                 if (e.key === 'Enter') {
                     e.preventDefault();
-                    const value = abilityInput.value.trim();
-                    if (value && !currentAbilities.includes(value)) {
-                        currentAbilities.push(value);
-                        renderAbilities();
-                        abilityInput.value = '';
-                    }
+                    addAbility();
                 }
             });
 
-            // Handle tags input
+            // Handle abilities button click
+            addAbilityBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                addAbility();
+            });
+
+            // Handle tags input - Enter key
             tagInput.addEventListener('keydown', (e) => {
                 if (e.key === 'Enter') {
                     e.preventDefault();
-                    const value = tagInput.value.trim();
-                    if (value && !currentTags.includes(value)) {
-                        currentTags.push(value);
-                        renderTags();
-                        tagInput.value = '';
-                    }
+                    addTag();
                 }
+            });
+
+            // Handle tags button click
+            addTagBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                addTag();
             });
 
             function renderAbilities() {
@@ -1306,19 +1367,34 @@
                 `).join('');
                 
                 abilitiesContainer.innerHTML = items + 
-                    '<input type="text" class="add-item-input" id="input-habilidad" placeholder="Presiona Enter para añadir...">';
+                    `<div class="input-wrapper">
+                        <input type="text" class="add-item-input" id="input-habilidad" placeholder="Escribe y presiona + o Enter...">
+                        <button type="button" class="add-item-btn" id="add-ability-btn" title="Agregar habilidad">+</button>
+                    </div>`;
                 
-                // Re-attach event listener
+                // Re-attach event listeners
                 const newInput = document.getElementById('input-habilidad');
+                const newBtn = document.getElementById('add-ability-btn');
+                
+                function addAbility() {
+                    const value = newInput.value.trim();
+                    if (value && !currentAbilities.includes(value)) {
+                        currentAbilities.push(value);
+                        renderAbilities();
+                        newInput.value = '';
+                    }
+                }
+                
                 newInput.addEventListener('keydown', (e) => {
                     if (e.key === 'Enter') {
                         e.preventDefault();
-                        const value = newInput.value.trim();
-                        if (value && !currentAbilities.includes(value)) {
-                            currentAbilities.push(value);
-                            renderAbilities();
-                        }
+                        addAbility();
                     }
+                });
+                
+                newBtn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    addAbility();
                 });
 
                 // Remove ability handlers
@@ -1340,19 +1416,34 @@
                 `).join('');
                 
                 tagsContainer.innerHTML = items + 
-                    '<input type="text" class="add-item-input" id="input-tag" placeholder="Presiona Enter para añadir...">';
+                    `<div class="input-wrapper">
+                        <input type="text" class="add-item-input" id="input-tag" placeholder="Escribe y presiona + o Enter...">
+                        <button type="button" class="add-item-btn" id="add-tag-btn" title="Agregar etiqueta">+</button>
+                    </div>`;
                 
-                // Re-attach event listener
+                // Re-attach event listeners
                 const newInput = document.getElementById('input-tag');
+                const newBtn = document.getElementById('add-tag-btn');
+                
+                function addTag() {
+                    const value = newInput.value.trim();
+                    if (value && !currentTags.includes(value)) {
+                        currentTags.push(value);
+                        renderTags();
+                        newInput.value = '';
+                    }
+                }
+                
                 newInput.addEventListener('keydown', (e) => {
                     if (e.key === 'Enter') {
                         e.preventDefault();
-                        const value = newInput.value.trim();
-                        if (value && !currentTags.includes(value)) {
-                            currentTags.push(value);
-                            renderTags();
-                        }
+                        addTag();
                     }
+                });
+                
+                newBtn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    addTag();
                 });
 
                 // Remove tag handlers
@@ -1436,7 +1527,6 @@
             const config = getGistConfig();
             document.getElementById('config-token').value = config.token;
             document.getElementById('config-gist-id').value = config.gistId;
-            document.getElementById('config-filename').value = config.filename;
 
             const lastSync = localStorage.getItem('last_sync');
             updateLastSyncDisplay(lastSync);
@@ -1445,7 +1535,7 @@
             document.getElementById('btn-save-config').addEventListener('click', () => {
                 const token = document.getElementById('config-token').value;
                 const gistId = document.getElementById('config-gist-id').value;
-                const filename = document.getElementById('config-filename').value;
+                const filename = CONFIG.defaultFilename; // Always use default filename
 
                 saveGistConfig(token, gistId, filename);
                 updateSyncStatus('success', 'Configuración guardada');
