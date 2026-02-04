@@ -521,7 +521,7 @@
       .danger-Extremo {
         background: var(--danger-extreme);
       }
-      .danger-Muy\ Alto {
+      .danger-Muy-Alto {
         background: var(--danger-very-high);
       }
       .danger-Absoluto {
@@ -1450,20 +1450,34 @@
       // ========================================
       async function addCreature(creature) {
         return new Promise((resolve, reject) => {
+          // Add metadata if not present
+          const now = new Date().toISOString();
+          if (!creature.created_at) creature.created_at = now;
+          if (!creature.updated_at) creature.updated_at = now;
+          if (!creature.status) creature.status = "active";
+
           const transaction = db.transaction([CONFIG.storeName], "readwrite");
           const store = transaction.objectStore(CONFIG.storeName);
-          const request = store.add(creature);
-          request.onsuccess = () => resolve(request.result);
+          // Use put() instead of add() to allow re-adding during sync without errors
+          const request = store.put(creature);
+          request.onsuccess = () => resolve(creature);
           request.onerror = () => reject(request.error);
         });
       }
 
-      async function getAllCreatures() {
+      async function getAllCreatures(includeDeleted = false) {
         return new Promise((resolve, reject) => {
           const transaction = db.transaction([CONFIG.storeName], "readonly");
           const store = transaction.objectStore(CONFIG.storeName);
           const request = store.getAll();
-          request.onsuccess = () => resolve(request.result);
+          request.onsuccess = () => {
+            let creatures = request.result;
+            // Filter out deleted creatures unless explicitly requested
+            if (!includeDeleted) {
+              creatures = creatures.filter(c => c.status !== "deleted");
+            }
+            resolve(creatures);
+          };
           request.onerror = () => reject(request.error);
         });
       }
@@ -1480,21 +1494,39 @@
 
       async function updateCreature(creature) {
         return new Promise((resolve, reject) => {
+          // Update the updated_at timestamp
+          creature.updated_at = new Date().toISOString();
+
           const transaction = db.transaction([CONFIG.storeName], "readwrite");
           const store = transaction.objectStore(CONFIG.storeName);
           const request = store.put(creature);
-          request.onsuccess = () => resolve(request.result);
+          request.onsuccess = () => resolve(creature);
           request.onerror = () => reject(request.error);
         });
       }
 
       async function deleteCreature(id) {
-        return new Promise((resolve, reject) => {
-          const transaction = db.transaction([CONFIG.storeName], "readwrite");
-          const store = transaction.objectStore(CONFIG.storeName);
-          const request = store.delete(id);
-          request.onsuccess = () => resolve();
-          request.onerror = () => reject(request.error);
+        // Soft delete: mark as deleted instead of removing
+        return new Promise(async (resolve, reject) => {
+          try {
+            const creature = await getCreatureById(id);
+            if (!creature) {
+              reject(new Error("Creature not found"));
+              return;
+            }
+            
+            // Mark as deleted and update timestamp
+            creature.status = "deleted";
+            creature.updated_at = new Date().toISOString();
+            
+            const transaction = db.transaction([CONFIG.storeName], "readwrite");
+            const store = transaction.objectStore(CONFIG.storeName);
+            const request = store.put(creature);
+            request.onsuccess = () => resolve();
+            request.onerror = () => reject(request.error);
+          } catch (error) {
+            reject(error);
+          }
         });
       }
 
@@ -1544,14 +1576,40 @@
         // Create a map of creatures by ID for efficient lookup
         const creaturesMap = new Map();
 
+        // Helper function to migrate old creatures without metadata
+        const migrateCreature = (creature) => {
+          const now = new Date().toISOString();
+          if (!creature.created_at) creature.created_at = now;
+          if (!creature.updated_at) creature.updated_at = now;
+          if (!creature.status) creature.status = "active";
+          return creature;
+        };
+
         // Add all local creatures to the map
         localCreatures.forEach((creature) => {
-          creaturesMap.set(creature.id, creature);
+          creaturesMap.set(creature.id, migrateCreature(creature));
         });
 
-        // Merge remote creatures (remote wins in case of duplicates)
-        remoteCreatures.forEach((creature) => {
-          creaturesMap.set(creature.id, creature);
+        // Merge remote creatures using timestamp comparison
+        remoteCreatures.forEach((remoteCreature) => {
+          migrateCreature(remoteCreature);
+          
+          if (creaturesMap.has(remoteCreature.id)) {
+            const localCreature = creaturesMap.get(remoteCreature.id);
+            
+            // Compare timestamps - keep the most recently updated version
+            const localTime = new Date(localCreature.updated_at).getTime();
+            const remoteTime = new Date(remoteCreature.updated_at).getTime();
+            
+            if (remoteTime > localTime) {
+              // Remote is newer, use it
+              creaturesMap.set(remoteCreature.id, remoteCreature);
+            }
+            // else: local is newer or equal, keep it
+          } else {
+            // New creature from remote, add it
+            creaturesMap.set(remoteCreature.id, remoteCreature);
+          }
         });
 
         // Convert map back to array
@@ -1601,7 +1659,8 @@
           }
 
           const remoteCreatures = JSON.parse(fileContent);
-          const localCreatures = await getAllCreatures();
+          // Include deleted creatures in local data for proper merging
+          const localCreatures = await getAllCreatures(true);
 
           // MERGE: Combine local and remote data
           const mergedCreatures = await mergeCreatures(
@@ -1685,8 +1744,9 @@
             );
           }
 
-          // STEP 2: Merge local with remote (local wins for duplicates)
-          const localCreatures = await getAllCreatures();
+          // STEP 2: Merge local with remote (timestamp-based conflict resolution)
+          // Include deleted creatures in local data for proper merging
+          const localCreatures = await getAllCreatures(true);
           const mergedCreatures = await mergeCreatures(
             remoteCreatures,
             localCreatures,
@@ -1756,8 +1816,8 @@
         updateSyncStatus("syncing", "Sincronizando con GitHub Gist...");
 
         try {
-          // Get current local state
-          const localCreatures = await getAllCreatures();
+          // Get current local state (including deleted for sync)
+          const localCreatures = await getAllCreatures(true);
           const content = JSON.stringify(localCreatures, null, 2);
 
           // Push directly to Gist
@@ -1995,7 +2055,7 @@
                 <img src="${creature.imagen_url}" alt="${creature.nombre}" class="modal-image"
                      onerror="this.style.display='none'">
                 <h2 class="modal-title">${creature.nombre}</h2>
-                <span class="danger-badge danger-${creature.nivel_peligro}">${creature.nivel_peligro}</span>
+                <span class="danger-badge danger-${creature.nivel_peligro.replace(/ /g, '-')}">${creature.nivel_peligro}</span>
 
                 <div class="modal-section">
                     <h3 class="modal-section-title">Origen</h3>
@@ -2088,7 +2148,7 @@
                 <img src="${creature.imagen_url}" alt="${creature.nombre}" class="modal-image"
                      onerror="this.style.display='none'">
                 <h2 class="modal-title">${creature.nombre}</h2>
-                <span class="danger-badge danger-${creature.nivel_peligro}">${creature.nivel_peligro}</span>
+                <span class="danger-badge danger-${creature.nivel_peligro.replace(/ /g, '-')}">${creature.nivel_peligro}</span>
 
                 <div class="modal-section">
                     <h3 class="modal-section-title">Origen</h3>
@@ -2254,7 +2314,7 @@
 
           // Confirm deletion
           const confirmDelete = confirm(
-            `¿Estás seguro de que deseas eliminar "${creature.nombre}"?\n\nEsta acción no se puede deshacer.`,
+            `¿Estás seguro de que deseas eliminar \"${creature.nombre}\"?\n\nLa criatura será marcada como eliminada y se sincronizará en todos tus dispositivos.`,
           );
 
           if (!confirmDelete) {
@@ -2517,6 +2577,15 @@
 
           try {
             if (isEditMode) {
+              // Get existing creature to preserve metadata
+              const existingCreature = await getCreatureById(editingCreatureId);
+              
+              // Preserve created_at and status from existing creature
+              if (existingCreature) {
+                creature.created_at = existingCreature.created_at;
+                creature.status = existingCreature.status;
+              }
+              
               // Update existing creature
               await updateCreature(creature);
               showNotification(
